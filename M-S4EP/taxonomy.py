@@ -80,13 +80,35 @@ try:
 
     emission_rows = []
     for row in emission_rows_tuples:
-        emission_rows.append(list(row)) # da vettore di tuple a vettore di vettori
+        emission_rows.append(list(row))  # da vettore di tuple a vettore di vettori
 
-    # filter for valid output - emissions
-    #emission_rows_filtered = []
-    #for i, row in enumerate(emission_rows):
-    #    if row[4] in VALID_EMISSIONS:
-    #        emission_rows_filtered.append(row)
+    techs = []
+    for i, elem in enumerate(emission_rows):
+        techs.append(elem[2])
+
+    query = "SELECT tech, periods,input_comm, ti_split FROM TechInputSplit"
+    cursor.execute(query)
+    input_split = cursor.fetchall()
+    input_split_values = []
+    for elem in input_split:
+        if elem[0] in techs:
+            input_split_values.append(elem)
+
+    query = "SELECT tech, periods, output_comm, to_split FROM TechOutputSplit"
+    cursor.execute(query)
+    output_split = cursor.fetchall()
+    output_split_values = []
+    for elem in output_split:
+        if elem[0] in techs:
+            output_split_values.append(elem)
+
+    print("First 10 of input split:")
+    for i in range(0,10):
+        print(input_split_values[i])
+
+    print("\n\nFirst 10 of output split:")
+    for i in range(0, 10):
+        print(output_split_values[i])
 
     # normalize emissions GWP_100, TOT_CO2 in [tCO2eq/act] --> recall the function normalize
     for i, row in enumerate(emission_rows):
