@@ -5,10 +5,9 @@ import csv
 def normalise_emission_factor_unit(val, unit):
     num = unit.split("/")[0]
     if num == "[t" or num == "t":
-        return val
+        return val / 1000
     elif num == "[kt" or num == "kt":
-        return val * 1000
-
+        return val
 
 # output values to be taken (from Output column in "EU Taxonomy for TEMOA sectors" sheet in Excel file)
 # for DAC, IND, H2, TRA sectors
@@ -32,13 +31,22 @@ CMT_EM = 0.498*1e3  # da tCO2/tOutput in ktCO2/MtOutput
 AL_EM = 1.514*1e3  # da tCO2/tOutput in ktCO2/MtOutput
 BOF_EM = 0.325*1e3  # da tCO2/tOutput in ktCO2/MtOutput
 EAF_EM = 0.3175*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-HVC_EM = 0.702*1  # da tCO2/tOutput in ktCO2/MtOutput
+HVC_EM = 0.702*1e3  # da tCO2/tOutput in ktCO2/MtOutput
+BTX_EM = 0.0295*1e3
+MTH_EM = 0.512*1e3
+AMM_EM = 1*1e3
+TRA_EM = 50*1e-3 # (già ktCO2/Bvkm)  (moltiplica per 1.7 (passenger per vehicle) per TRA_RAIL_PSG, TRA_ROA_BUS , TRA_ROA_LCV , lascia 50 per TRA_ROA_CAR)
+RAIL_FRG_EM = 50.77*1e-9*1e4/1e-6  # -9 per passare da g a ktons, 4 riferito alle 10.000 tons trasportate in media da ogni
+# veicolo, 1e-6 per passare da vehicles a Bvehicles. ATTENZIONE che qui ho i PJ e non i Bvkm. Questo poi va scritto come RAIL_FRG_EM*(0.5) visto che da normativa deve diminuire del 50% (A TRA_ROA_2HW metti 0)
+TR_EM = 118.73*1e-9*1e4/1e-6 # (per TRA_ROA_HTR, TRA_ROA_MTR * 0.5)
 
 
 EMISSION_THRESHOLD = [0, H2_EM, H2_EM, H2_EM, CLK_EM, CMT_EM,
-                      AL_EM, BOF_EM, EAF_EM,  ]
+                      AL_EM, BOF_EM, EAF_EM, HVC_EM, BTX_EM, MTH_EM,
+                      AMM_EM, TRA_EM*1.7, RAIL_FRG_EM*0.5, TRA_EM*1.7, TRA_EM, TRA_EM*1.7,
+                      0, TR_EM*0.5, TR_EM*0.5]
 
-CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_RAIL_FRG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV"]
+CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV"]
 
 # for CCUS, H2 and IND needing efficiency, RES, COM, Storage
 VALID_EFFICIENCY = ["DMY_OUT", "COM_SH", "COM_WH", "COM_SC", "COM_LG", "ELC_DST", "H2_CTE", "H2_CUE", "H2_DT",
@@ -86,29 +94,99 @@ try:
     for i, elem in enumerate(emission_rows):
         techs.append(elem[2])
 
-    query = "SELECT tech, periods,input_comm, ti_split FROM TechInputSplit"
+    query = "SELECT tech, periods, input_comm, ti_split FROM TechInputSplit ORDER BY tech"
     cursor.execute(query)
-    input_split = cursor.fetchall()
+    temp = cursor.fetchall()
     input_split_values = []
-    for elem in input_split:
+    for elem in temp:
         if elem[0] in techs:
             input_split_values.append(elem)
 
-    query = "SELECT tech, periods, output_comm, to_split FROM TechOutputSplit"
+    query = "SELECT tech, periods, output_comm, to_split FROM TechOutputSplit ORDER BY tech"
     cursor.execute(query)
-    output_split = cursor.fetchall()
+    temp = cursor.fetchall()
     output_split_values = []
-    for elem in output_split:
+    for elem in temp:
         if elem[0] in techs:
             output_split_values.append(elem)
 
-    print("First 10 of input split:")
-    for i in range(0,10):
-        print(input_split_values[i])
+    # tech, periods, input_comm
+    query = "SELECT TechInputSplit.tech, TechInputSplit.periods, Efficiency.input_comm FROM TechInputSplit, Efficiency WHERE TechInputSplit.tech IN (SELECT tech FROM TechInputSplit GROUP BY tech, periods, regions HAVING COUNT(*) = 1) AND Efficiency.tech = TechInputSplit.tech and Efficiency.vintage = TechInputSplit.periods ORDER BY TechInputSplit.tech"
+    cursor.execute(query)
+    temp_input_values = cursor.fetchall()
 
-    print("\n\nFirst 10 of output split:")
-    for i in range(0, 10):
-        print(output_split_values[i])
+    # tech, periods, output_comm
+    query = "SELECT TechOutputSplit.tech, TechOutputSplit.periods, Efficiency.output_comm FROM TechOutputSplit, Efficiency WHERE TechOutputSplit.tech IN (SELECT tech FROM TechOutputSplit GROUP BY tech, periods, regions HAVING COUNT(*) = 1) AND Efficiency.tech = TechOutputSplit.tech and Efficiency.vintage = TechOutputSplit.periods"
+    cursor.execute(query)
+    temp_output_values = cursor.fetchall()
+
+    # estendiamo gli input
+    input_split_values_temp = input_split_values
+    for temp_elem in temp_input_values:
+        found = False
+        for i, elem in enumerate(input_split_values):
+            if elem[0] == temp_elem[0] and elem[1] == temp_elem[2] and elem[2] == temp_elem[2]:
+                found = True
+        if not found:
+            val = 0
+            for i, elem in enumerate(input_split_values):
+                if elem[0] == temp_elem[0] and elem[1] == temp_elem[1] and temp_elem[2] != elem[2]: # ENTRA QUI UNA SOLA VOLTA VERIFICA!!!!!
+                    val = float(elem[3])
+            if val != 0:
+                input_split_values_temp.append([temp_elem[0], temp_elem[1], temp_elem[2], 1-val])
+    input_split_values = input_split_values_temp
+
+    # estendiamo gli output
+    output_split_values_temp = output_split_values
+    for temp_elem in temp_output_values:
+        found = False
+        for i, elem in enumerate(output_split_values):
+            if elem[0] == temp_elem[0] and elem[1] == temp_elem[2] and elem[2] == temp_elem[2]:
+                found = True
+        if not found:
+            val = 0
+            for i, elem in enumerate(output_split_values):
+                if elem[0] == temp_elem[0] and elem[1] == temp_elem[1] and temp_elem[2] != elem[2]:  # ENTRA QUI UNA SOLA VOLTA VERIFICA!!!!!
+                    val = float(elem[3])
+            if val != 0:
+                output_split_values_temp.append([temp_elem[0], temp_elem[1], temp_elem[2], 1 - val])
+    output_split_values = output_split_values_temp
+
+    tech_year_inputSum_map = dict()
+    for elem in input_split_values:
+        key = str(elem[0]) + "-" + str(elem[1])
+        if key not in tech_year_inputSum_map:
+            tech_year_inputSum_map.update({key: 0})
+        tech_year_inputSum_map.update({key: tech_year_inputSum_map.get(key) + float(elem[3])})
+    input_split_values_temp = input_split_values
+    input_split_values = []
+    for row in input_split_values_temp:
+        input_split_values.append(list(row))  # da vettore di tuple a vettore di vettori
+    for elem in input_split_values:
+        key = str(elem[0]) + "-" + str(elem[1])
+        if key in tech_year_inputSum_map.keys():
+            val = tech_year_inputSum_map.get(key)
+            if val != 1:
+                elem[3] = elem[3] / val
+    for elem in input_split_values:
+        print(elem)
+
+    tech_year_outputSum_map = dict()
+    for elem in output_split_values:
+        key = str(elem[0]) + "-" + elem[1]
+        if key not in tech_year_outputSum_map:
+            tech_year_outputSum_map.update({key: 0})
+        tech_year_outputSum_map.update({key: tech_year_outputSum_map.get(key) + float(elem[3])})
+    output_split_values_temp = output_split_values
+    output_split_values = []
+    for row in tech_year_outputSum_map:
+        output_split_values.append(list(row))  # da vettore di tuple a vettore di vettori
+    for elem in output_split_values:
+        key = str(elem[0]) + "-" + str(elem[1])
+        if key in tech_year_outputSum_map.keys():
+            val = tech_year_outputSum_map.get(key)
+            if val != 1:
+                elem[3] = elem[3] / val
 
     # normalize emissions GWP_100, TOT_CO2 in [tCO2eq/act] --> recall the function normalize
     for i, row in enumerate(emission_rows):
