@@ -5,9 +5,9 @@ import csv
 def normalise_emission_factor_unit(val, unit):
     num = unit.split("/")[0]
     if num == "[t" or num == "t":
-        return val
+        return val / 1000
     elif num == "[kt" or num == "kt":
-        return val * 1000
+        return val
 
 # output values to be taken (from Output column in "EU Taxonomy for TEMOA sectors" sheet in Excel file)
 # for DAC, IND, H2, TRA sectors
@@ -31,13 +31,22 @@ CMT_EM = 0.498*1e3  # da tCO2/tOutput in ktCO2/MtOutput
 AL_EM = 1.514*1e3  # da tCO2/tOutput in ktCO2/MtOutput
 BOF_EM = 0.325*1e3  # da tCO2/tOutput in ktCO2/MtOutput
 EAF_EM = 0.3175*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-HVC_EM = 0.702*1  # da tCO2/tOutput in ktCO2/MtOutput
+HVC_EM = 0.702*1e3  # da tCO2/tOutput in ktCO2/MtOutput
+BTX_EM = 0.0295*1e3
+MTH_EM = 0.512*1e3
+AMM_EM = 1*1e3
+TRA_EM = 50*1e-3 # (già ktCO2/Bvkm)  (moltiplica per 1.7 (passenger per vehicle) per TRA_RAIL_PSG, TRA_ROA_BUS , TRA_ROA_LCV , lascia 50 per TRA_ROA_CAR)
+RAIL_FRG_EM = 50.77*1e-9*1e4/1e-6  # -9 per passare da g a ktons, 4 riferito alle 10.000 tons trasportate in media da ogni
+# veicolo, 1e-6 per passare da vehicles a Bvehicles. ATTENZIONE che qui ho i PJ e non i Bvkm. Questo poi va scritto come RAIL_FRG_EM*(0.5) visto che da normativa deve diminuire del 50% (A TRA_ROA_2HW metti 0)
+TR_EM = 118.73*1e-9*1e4/1e-6 # (per TRA_ROA_HTR, TRA_ROA_MTR * 0.5)
 
 
 EMISSION_THRESHOLD = [0, H2_EM, H2_EM, H2_EM, CLK_EM, CMT_EM,
-                      AL_EM, BOF_EM, EAF_EM,  ]
+                      AL_EM, BOF_EM, EAF_EM, HVC_EM, BTX_EM, MTH_EM,
+                      AMM_EM, TRA_EM*1.7, RAIL_FRG_EM*0.5, TRA_EM*1.7, TRA_EM, TRA_EM*1.7,
+                      0, TR_EM*0.5, TR_EM*0.5]
 
-CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_RAIL_FRG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV"]
+CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV"]
 
 # for CCUS, H2 and IND needing efficiency, RES, COM, Storage
 VALID_EFFICIENCY = ["DMY_OUT", "COM_SH", "COM_WH", "COM_SC", "COM_LG", "ELC_DST", "H2_CTE", "H2_CUE", "H2_DT",
