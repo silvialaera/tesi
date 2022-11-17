@@ -168,18 +168,16 @@ try:
             val = tech_year_inputSum_map.get(key)
             if val != 1:
                 elem[3] = elem[3] / val
-    for elem in input_split_values:
-        print(elem)
 
     tech_year_outputSum_map = dict()
     for elem in output_split_values:
-        key = str(elem[0]) + "-" + elem[1]
+        key = str(elem[0]) + "-" + str(elem[1])
         if key not in tech_year_outputSum_map:
             tech_year_outputSum_map.update({key: 0})
         tech_year_outputSum_map.update({key: tech_year_outputSum_map.get(key) + float(elem[3])})
     output_split_values_temp = output_split_values
     output_split_values = []
-    for row in tech_year_outputSum_map:
+    for row in output_split_values:
         output_split_values.append(list(row))  # da vettore di tuple a vettore di vettori
     for elem in output_split_values:
         key = str(elem[0]) + "-" + str(elem[1])
@@ -187,37 +185,73 @@ try:
             val = tech_year_outputSum_map.get(key)
             if val != 1:
                 elem[3] = elem[3] / val
+    for elem in output_split_values:
+       print(elem)
 
+    # coming back to EmissionActivity table
     # normalize emissions GWP_100, TOT_CO2 in [tCO2eq/act] --> recall the function normalize
     for i, row in enumerate(emission_rows):
         emission_rows[i][5] = normalise_emission_factor_unit(row[5], row[6])
 
+    input_split_values_map = dict()
+    output_split_values_map = dict()
+    for elem in input_split_values:
+        input_split_values_map.update({str(elem[0]) + "-" + str(elem[1]) + "-" + elem[2]: float(elem[3])})
+    for elem in output_split_values:
+        output_split_values_map.update({str(elem[0]) + "-" + str(elem[1]) + "-" + elem[2]: float(elem[3])})
+
+    techs_emission = []
+    for elem in emission_rows:
+        if elem[4] in VALID_EMISSIONS:
+            techs_emission.append(elem[2])
+
+    tech_year_output_input_value_map = dict()
+    tech_in = []
+    for elem in input_split_values_map:
+        tech_in.append(elem[0].split("-")[0])
+    tech_out = []
+    for elem in output_split_values_map:
+        tech_out.append(elem[0].split("-")[0])
+    for element in emission_rows:
+        if element[2] in techs_emission:
+            if element[3] >= START_YEAR:
+                key = str(element[2]) + "-" + str(element[3]) + "-" + str(element[4]) + "-" + str(element[1])
+                key_out = str(element[2]) + "-" + str(element[3]) + "-" + str(element[4])
+                key_input = str(element[2]) + "-" + str(element[3]) + "-" + str(element[1])
+                value = float(element[5])
+                if element[4] in CO2_OUTPUT and element[0] == "TOT_CO2" or element[0] == "GWP_100":
+                    if key not in tech_year_output_input_value_map.keys(): # if key is not present yet, add it!
+                        tech_year_output_input_value_map.update({key: 0.0})
+                    if element[2] in tech_in and element[2] in tech_out:
+                        value_out = output_split_values_map[key_out]
+                        value_in = input_split_values_map[key_input]
+                        value = value * value_out * value_in
+                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                    elif element[2] in tech_in and element[2] not in tech_out:
+                        value_in = input_split_values_map[key_input]
+                        value = value * value_in
+                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                    elif element[2] in tech_out and element[2] not in tech_in:
+                        value_out = output_split_values_map[key_input]
+                        value = value * value_out
+                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                    else:
+                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+
+    for elem in tech_year_output_input_value_map.items():
+        print(elem)
+
     # evaluation of emissions (sum of all GWP_100 for equivalent CO2 OR TOT_CO2 per each year, see "Code explanation" file on Notability)
     # sum is done as a single output may have multiple inputs
-    tech_year_output_value_map = dict()
-    # la mappa è come un vettore ma come indice ha una chiave, che può essere una stringa
-
-    for row in emission_rows:
-        if row[3] >= START_YEAR:
-            key = str(row[2]) + "-" + str(row[3]) + "-" + str(row[4])
-            value = float(row[5])
-            if row[4] in CO2_OUTPUT:
-                if row[0] == "TOT_CO2":
-                    if key not in tech_year_output_value_map.keys(): # if key is not present yet, add it!
-                        tech_year_output_value_map.update({key: 0.0})
-                    tech_year_output_value_map.update({key: tech_year_output_value_map.get(key) + value})
-            elif row[0] == "GWP_100":
-                if key not in tech_year_output_value_map.keys():
-                    tech_year_output_value_map.update({key: 0.0})
-                tech_year_output_value_map.update({key: tech_year_output_value_map.get(key) + value})
 
     # save it on a csv file
     outFile = csv.writer(open("tech_year_value.csv", "w"))
-    for key, value in tech_year_output_value_map.items():
+    for key, value in tech_year_output_input_value_map.items():
         t = key.split("-")[0]
         y = key.split("-")[1]
         o = key.split("-")[2]
-        outFile.writerow([t, y, o, value])
+        i = key.split("-")[3]
+        outFile.writerow([t, y, o, i, value])
 
     # compare total emission with thresholds of Taxonomy and assign a flag premium (green or brown)
     # premium_emission is assigned (new column), premium_efficiency column is created, void, to be filled later
@@ -228,7 +262,7 @@ try:
         emission_threshold_map[emission] = 1 # vect[i]
 
     tech_year_output_diff_map = dict()
-    for element in tech_year_output_value_map.items():
+    for element in tech_year_output_input_value_map.items():
         key = element[0] # chiave tech anno output
         value = element[1]
         key_split = key.split("-") # vector
