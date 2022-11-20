@@ -1,6 +1,7 @@
 import sqlite3
 import csv
 
+
 # normalize emissions in [tCO2eq/act]
 def normalise_emission_factor_unit(val, unit):
     num = unit.split("/")[0]
@@ -8,6 +9,7 @@ def normalise_emission_factor_unit(val, unit):
         return val / 1000
     elif num == "[kt" or num == "kt":
         return val
+
 
 # output values to be taken (from Output column in "EU Taxonomy for TEMOA sectors" sheet in Excel file)
 # for DAC, IND, H2, TRA sectors
@@ -25,26 +27,25 @@ CO2_OUTPUT = ["SNK_CO2", "IND_CH_AMM", "TRA_ROA_CAR", "TRA_ROA_LCV", "TRA_ROA_2W
 GREEN_H2 = ["H2_DTE", "H2_CUE", "H2_CTE"]
 LHV_H2 = 120  # MJ/kg a 0°C
 H2_LIM = 0.95  # 0,95 tCO2e/tOutput per taxonomy
-H2_EM = H2_LIM*1e-3/(LHV_H2*1e3/1e9)
-CLK_EM = 0.766*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-CMT_EM = 0.498*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-AL_EM = 1.514*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-BOF_EM = 0.325*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-EAF_EM = 0.3175*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-HVC_EM = 0.702*1e3  # da tCO2/tOutput in ktCO2/MtOutput
-BTX_EM = 0.0295*1e3
-MTH_EM = 0.512*1e3
-AMM_EM = 1*1e3
-TRA_EM = 50*1e-3 # (già ktCO2/Bvkm)  (x 1.7 (passenger per vehicle) per TRA_RAIL_PSG, TRA_ROA_BUS , TRA_ROA_LCV , leave 50 per TRA_ROA_CAR)
-RAIL_FRG_EM = 50.77*1e-9*1e4/1e-6  # -9 to pass from g to kt, 4 referred alle 10.000 tons transported in media da ogni
+H2_EM = H2_LIM * 1e-3 / (LHV_H2 * 1e3 / 1e9)
+CLK_EM = 0.766 * 1e3  # da tCO2/tOutput in ktCO2/MtOutput
+CMT_EM = 0.498 * 1e3  # da tCO2/tOutput in ktCO2/MtOutput
+AL_EM = 1.514 * 1e3  # da tCO2/tOutput in ktCO2/MtOutput
+BOF_EM = 0.325 * 1e3  # da tCO2/tOutput in ktCO2/MtOutput
+EAF_EM = 0.3175 * 1e3  # da tCO2/tOutput in ktCO2/MtOutput
+HVC_EM = 0.702 * 1e3  # da tCO2/tOutput in ktCO2/MtOutput
+BTX_EM = 0.0295 * 1e3
+MTH_EM = 0.512 * 1e3
+AMM_EM = 1 * 1e3
+TRA_EM = 50 * 1e-3  # (già ktCO2/Bvkm)  (x 1.7 (passenger per vehicle) per TRA_RAIL_PSG, TRA_ROA_BUS , TRA_ROA_LCV , leave 50 per TRA_ROA_CAR)
+RAIL_FRG_EM = 50.77 * 1e-9 * 1e4 / 1e-6  # -9 to pass from g to kt, 4 referred alle 10.000 tons transported in media da ogni
 # veicolo, 1e-6 per passare da vehicles a Bvehicles. ATTENZIONE che qui ho i PJ e non i Bvkm. Questo poi va scritto come RAIL_FRG_EM*(0.5) visto che da normativa deve diminuire del 50% (A TRA_ROA_2HW metti 0)
-TR_EM = 118.73*1e-9*1e4/1e-6 # (per TRA_ROA_HTR, TRA_ROA_MTR * 0.5)
-
+TR_EM = 118.73 * 1e-9 * 1e4 / 1e-6  # (per TRA_ROA_HTR, TRA_ROA_MTR * 0.5)
 
 EMISSION_THRESHOLD = [0, H2_EM, H2_EM, H2_EM, CLK_EM, CMT_EM,
                       AL_EM, BOF_EM, EAF_EM, HVC_EM, BTX_EM, MTH_EM,
-                      AMM_EM, TRA_EM*1.7, RAIL_FRG_EM*0.5, TRA_EM*1.7, TRA_EM, TRA_EM*1.7,
-                      0, TR_EM*0.5, TR_EM*0.5]
+                      AMM_EM, TRA_EM * 1.7, RAIL_FRG_EM * 0.5, TRA_EM * 1.7, TRA_EM, TRA_EM * 1.7,
+                      0, TR_EM * 0.5, TR_EM * 0.5]
 
 CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV"]
 
@@ -52,15 +53,16 @@ CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_
 VALID_EFFICIENCY = ["DMY_OUT", "COM_SH", "COM_WH", "COM_SC", "COM_LG", "ELC_DST", "H2_CTE", "H2_CUE", "H2_DT",
                     "H2_DTE", "H2_CU", "H2_CT", "IND_CH_CHL", "IND_CH_OLF",
                     "RES_PC_MO", "RES_PC_SN", "RES_PC_SO", "RES_PH_MO", "RES_PH_SN", "RES_PH_SO", "RES_PW_MO",
-                    "RES_PW_SN", "RES_PW_SO", "RES_WH", "RES_SH_SO", "RES_SH_MO", "RES_SH_SN", "RES_SH_MN", "RES_SC", "RES_LG",
+                    "RES_PW_SN", "RES_PW_SO", "RES_WH", "RES_SH_SO", "RES_SH_MO", "RES_SH_SN", "RES_SH_MN", "RES_SC",
+                    "RES_LG",
                     "RES_WH", "RES_INS_C", "RES_INS_MO", "RES_INS_SN", "RES_INS_SO",
                     "BIO_BIN", "BIO_BMU", "BIO_DST", "BIO_ETH", "BIO_GAS", "BIO_SLB_RES", "BIO_SLB_VIR"]
 H2_CONSUMPTION = 50  # MWh/tOutput
-H2_EFF = 1/(H2_CONSUMPTION*3.6e-6/(LHV_H2*1000/1e9))
+H2_EFF = 1 / (H2_CONSUMPTION * 3.6e-6 / (LHV_H2 * 1000 / 1e9))
 COM_HP_EFF = 3.3  # efficiency threshold Heat pumps in COM and RES (PJ/PJ) for SH, WH, SC
 COM_LG_EFF = 5.5  # efficiency threshold lighting (COM_LG is in PJ, RES_LG is in Glm)
 # AL_EFF = 1/(15.29*3.6e-6*1e6)  # MWh/t primary Al for IND_NF_EC. AL demand is in Mt
-CHL_EFF = 1/(2.75*3.6e-6*1e6)  # MWh/t primary Chl for IND_NF_EC. CH demand is in Mt
+CHL_EFF = 1 / (2.75 * 3.6e-6 * 1e6)  # MWh/t primary Chl for IND_NF_EC. CH demand is in Mt
 RES_SH_SO_factor = 1.9395
 RES_SH_MO_factor = 2.6602
 RES_SH_SN_factor = 1.9395
@@ -70,7 +72,8 @@ RES_LG_EFF = 20  # default choice by me for lighting in RES
 EFFICIENCY_THRESHOLD = [0, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_LG_EFF, 0, H2_EFF, H2_EFF, H2_EFF,
                         H2_EFF, H2_EFF, H2_EFF, CHL_EFF, 0,
                         COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF,
-                        COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, RES_LG_EFF,
+                        COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF,
+                        RES_LG_EFF,
                         0, 0, 0, 0, 0,
                         0, 0, 0, 0, 0, 0, 0]
 START_YEAR = 2025
@@ -84,7 +87,7 @@ try:
     # select useful parameters from EmissionActivity table
     query = "SELECT emis_comm, input_comm, tech, vintage, output_comm, emis_act, emis_act_units FROM EmissionActivity"
     cursor.execute(query)
-    emission_rows_tuples = cursor.fetchall() # fetchall to extract result of last query exectued
+    emission_rows_tuples = cursor.fetchall()  # fetchall to extract result of last query exectued
 
     emission_rows = []
     for row in emission_rows_tuples:
@@ -107,9 +110,9 @@ try:
     query = "SELECT tech, periods, output_comm, to_split FROM TechOutputSplit ORDER BY tech"
     cursor.execute(query)
     output_split_values = cursor.fetchall()
-    #temp = cursor.fetchall()
-    #output_split_values = []
-    #for elem in temp:
+    # temp = cursor.fetchall()
+    # output_split_values = []
+    # for elem in temp:
     #    if elem[0] in techs:
     #        output_split_values.append(elem)
 
@@ -140,7 +143,7 @@ try:
                 if elem[0] == temp_elem[0] and elem[1] == temp_elem[1] and temp_elem[2] != elem[2]:  # enter here just one time. Verified.
                     val = float(elem[3])
             if val != 0:
-                input_split_values_temp.append([temp_elem[0], temp_elem[1], temp_elem[2], 1-val])
+                input_split_values_temp.append([temp_elem[0], temp_elem[1], temp_elem[2], 1 - val])
     input_split_values = input_split_values_temp
 
     # extend output
@@ -193,14 +196,12 @@ try:
             val = tech_year_outputSum_map.get(key)
             if val != 1:
                 elem[3] = elem[3] / val
-    #print(len(output_split_values))
-    #for elem in output_split_values:
-    #   print(elem)
 
     # coming back to EmissionActivity table
     # normalize emissions GWP_100, TOT_CO2 in [tCO2eq/act] --> recall the function normalize
     for i, row in enumerate(emission_rows):
         emission_rows[i][5] = normalise_emission_factor_unit(row[5], row[6])
+
 
     # create maps for TechInputSplit and TechOutputSplit
     input_split_values_map = dict()
@@ -218,13 +219,12 @@ try:
 
     tech_year_output_input_value_map = dict()
     tech_in = []
-    for elem in input_split_values_map:
+    for elem in input_split_values_map.items():
         tech_in.append(elem[0].split("-")[0])
     tech_out = []
-    for elem in output_split_values_map:
+    for elem in output_split_values_map.items():
         tech_out.append(elem[0].split("-")[0])
 
-    # evaluation of emissions (sum of all GWP_100 for equivalent CO2 OR TOT_CO2 per each year, see "Code explanation" file on Notability)
     # if cascade for analysing all cases: tech with unique input/output, etc
     for element in emission_rows:
         if element[2] in techs_emission:
@@ -234,26 +234,60 @@ try:
                 key_input = str(element[2]) + "-" + str(element[3]) + "-" + str(element[1])
                 value = float(element[5])
                 if element[4] in CO2_OUTPUT and element[0] == "TOT_CO2" or element[0] == "GWP_100":
-                    if key not in tech_year_output_input_value_map.keys(): # if key is not present yet, add it!
+                    if key not in tech_year_output_input_value_map.keys():  # if key is not present yet, add it!
                         tech_year_output_input_value_map.update({key: 0.0})
                     if element[2] in tech_in and element[2] in tech_out:
                         value_out = output_split_values_map[key_out]
                         value_in = input_split_values_map[key_input]
                         value = value * value_out * value_in
-                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                        tech_year_output_input_value_map.update(
+                            {key: tech_year_output_input_value_map.get(key) + value})
+                        if str(element[2]) == "IND_CH_MTH_COAGSF_N":
+                            print(str(element[3]) + "," + str(value_out) + "-" + str(value_in) + "," + str(value))
                     elif element[2] in tech_in and element[2] not in tech_out:
                         value_in = input_split_values_map[key_input]
                         value = value * value_in
-                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                        tech_year_output_input_value_map.update(
+                            {key: tech_year_output_input_value_map.get(key) + value})
                     elif element[2] in tech_out and element[2] not in tech_in:
-                        value_out = output_split_values_map[key_input]
+                        value_out = output_split_values_map[key_out]
                         value = value * value_out
-                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                        tech_year_output_input_value_map.update(
+                            {key: tech_year_output_input_value_map.get(key) + value})
                     else:
-                        tech_year_output_input_value_map.update({key: tech_year_output_input_value_map.get(key) + value})
+                        tech_year_output_input_value_map.update(
+                            {key: tech_year_output_input_value_map.get(key) + value})
 
-    #for elem in tech_year_output_input_value_map.items():
-    #    print(elem)
+    # delete the input from the key -> obtain a new map with tech-year-output as keys
+    tech_year_output_value_map = dict()
+    for element in tech_year_output_input_value_map.items():
+        key = element[0]
+        value = float(element[1])
+        tech = key.split("-")[0]
+        year = key.split("-")[1]
+        output = key.split("-")[2]
+        input = key.split("-")[3]
+        if output in VALID_EMISSIONS:
+            k = tech + "-" + year + "-" + output
+            v = value
+            tech_year_output_value_map.update({k: v})
+
+    for element in tech_year_output_value_map.items():
+        key = element[0]
+        value = float(element[1])
+        tech = key.split("-")[0]
+        year = key.split("-")[1]
+        output = key.split("-")[2]
+        v = -1
+        if not output_split_values_map.__contains__(str(tech) + "-" + str(year) + "-" + str(output)):
+            v = 1
+        else:
+            v = float(output_split_values_map.get(str(tech) + "-" + str(year) + "-" + str(output)))
+        value = value / float(v)
+        tech_year_output_value_map.update({key: float(value)})
+
+    for elem in tech_year_output_value_map.items():
+        print(elem)
 
     # save it on a csv file
     outFile = csv.writer(open("tech_year_value.csv", "w"))
@@ -336,7 +370,6 @@ try:
     for elem in efficiency_rows:
         if elem[3] in VALID_EFFICIENCY:
             techs_efficiency.append(elem[1])
-
 
     # create a map valid_emission threshold
     efficiency_threshold_map = dict()
