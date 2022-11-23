@@ -63,19 +63,30 @@ HEAT_PUMP = ["COM_SH", "COM_WH", "COM_SC",  "RES_PC_MO", "RES_PC_SN", "RES_PC_SO
              "RES_SH_SN", "RES_SH_MN", "RES_SC", "RES_LG"]
 
 # ADD electricity commodities
-ELC_TYPES = ["AGR_ELC", "COM_ELC", "RES_ELC", "TRA_ELC", "IND_ELC", "ELC_CEN", "ELC_DST", "ELC_IMP", "UPS_ELC"]
+ELC_TYPES = ["AGR_ELC", "COM_ELC", "RES_ELC", "TRA_ELC", "IND_ELC", "ELC_CEN", "ELC_DST"]
 
 H2_CONSUMPTION = 50   # MWh/tOutput
 H2_EFF = 1 / (H2_CONSUMPTION * 3.6e-6 / (LHV_H2 * 1000 / 1e9))
 COM_HP_EFF = 3.3  # efficiency threshold Heat pumps in COM and RES (PJ/PJ) for SH, WH, SC
 COM_LG_EFF = 5.5  # efficiency threshold lighting (COM_LG is in PJ, RES_LG is in Glm)
+RES_LG_EFF = 15  # default choice by me for lighting in RES, compliant with tech chosen in COM
 CHL_EFF = 1 / (2.75 * 3.6e-6 * 1e6)  # MWh/t primary Chl for IND_NF_EC. CH demand is in Mt
 RES_SH_SO_factor = 1.9395
 RES_SH_MO_factor = 2.6602
 RES_SH_SN_factor = 1.9395
 RES_SH_MN_factor = 1.9395
 RES_SC_factor = 14.7257
-RES_LG_EFF = 20  # default choiceby me for lighting in RES
+
+OUTPUT_ELIGIBLE = ["DMY_OUT", "COM_WH", "RES_WH", "ELC_DST", "H2_CT", "H2_DT", "H2_CU", "RES_SH_SN", "RES_SH_SO", "RES_SH_MO", "RES_SH_MN"]
+
+UNIQUE_OUTPUT = ["DMY_OUT", "ELC_DST", "H2_CT", "H2_DT", "H2_CU"]  # for those output competitors are not easy to find.
+# the competitor of a sink of CO2 producing DMY_OUT is not UPS[...] producing the same DMY_OUT
+# the same is for ELC_DST, and for H2 here for storage but storage not compete with other H2 producers. Or, better, they do not deserve a penalty.
+
+INPUT_ELIGIBLE = ["SNK_CO2", "COM_SOL", "RES_SOL", "ELC_SOL", "H2_CT", "H2_DT", "H2_CU", "RES_SOL"]
+
+ELIGIBLE_DEFAULT = ["RES_INS_C", "RES_INS_MO", "RES_INS_SN", "RES_INS_SO",
+                    "BIO_BIN", "BIO_BMU", "BIO_DST", "BIO_ETH", "BIO_GAS", "BIO_SLB_RES", "BIO_SLB_VIR"]
 
 RES_FACTOR_NAME = ["RES_SH_SO", "RES_SH_MO", "RES_SH_SN", "RES_SH_MN", "RES_SC"]
 
@@ -88,6 +99,7 @@ EFFICIENCY_THRESHOLD = [0, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_LG_EFF, 0, H2
                         RES_LG_EFF,
                         0, 0, 0, 0, 0,
                         0, 0, 0, 0, 0, 0, 0]
+
 START_YEAR = 2025
 
 try:
@@ -337,22 +349,14 @@ try:
             if output in CHANGING_THRESHOLD_OUTPUT and int(year) >= 2025:
                 # the threshold is 0 => value - threshold = 0
                 if value > 0:
-                    tech_year_output_map.update({key: "emission_penalty"})
+                    tech_year_output_map.update({key: "Emission_Penalty"})
                 else:
-                    tech_year_output_map.update({key: "emission_premium"})
+                    tech_year_output_map.update({key: "Emission_Premium"})
             else:
                 if value > emission_threshold_map[str(output)]:
-                    tech_year_output_map.update({key: "emission_penalty"})
+                    tech_year_output_map.update({key: "Emission_Penalty"})
                 else:
-                    tech_year_output_map.update({key: "emission_premium"})
-
-    outFile = csv.writer(open("tech_year_output_premium.csv", "w"))
-    for key, value in tech_year_output_map.items():
-        t = key.split("-")[0]
-        y = key.split("-")[1]
-        o = key.split("-")[2]
-        p = value.split("-")[0]
-        outFile.writerow([t, y, o, p])
+                    tech_year_output_map.update({key: "Emission_Premium"})
 
     # ---------------------------------------------------------------------------------------------------------------------------------
     # PART 2 : select useful parameters from Efficiency table
@@ -372,22 +376,21 @@ try:
         techFromMap.append(element[0].split("-")[0])
 
     for element in efficiency_rows:
-        output = element[3]
-        year = element[2]
         tech = element[1]
-        key = str(output) + "-" + str(year) + "-" + str(tech)
-        if output in VALID_EMISSIONS and tech in techFromMap and output != "SNK_CO2":
-            tech_year_output_map.update({key: "emission_premium"})
-        elif output in GREEN_H2 and tech in techFromMap:
-            tech_year_output_map.update({key: "emission_premium"})
+        year = element[2]
+        output = element[3]
+        key = str(tech) + "-" + str(year) + "-" + str(output)
+        if year >= START_YEAR:
+            if output in VALID_EMISSIONS and tech in techFromMap and output != "SNK_CO2":
+                tech_year_output_map.update({key: "Emission_Premium"})
+            elif output in GREEN_H2:
+                tech_year_output_map.update({key: "Emission_Premium"})
 
     # looking for tech whose output is in valid_efficiency
     techs_efficiency = []
     for elem in efficiency_rows:
         if elem[3] in VALID_EFFICIENCY:
             techs_efficiency.append(elem[1])
-
-
 
     # evaluation of electricity consumption: average sum
     tech_year_elc_map = dict()
@@ -485,7 +488,7 @@ try:
     for i, efficiency in enumerate(VALID_EFFICIENCY):
         efficiency_threshold_map[efficiency] = EFFICIENCY_THRESHOLD[i]
 
-    tech_year_output_map = dict()
+    # check for tech using ELC
     for element in tech_year_output_eff_map.items():
         key = element[0]
         value = element[1]
@@ -493,13 +496,107 @@ try:
         tech = key_split[0]
         year = key_split[1]
         output = key_split[2]
+        if key not in tech_year_output_map.keys():  # if key is not present yet, add it!
+            v = "NULL"
+            tech_year_output_map.update({key: v})
+            if value < efficiency_threshold_map[str(output)]:
+                tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Penalty"})
+            else:
+                tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Premium"})
+        else:
+            if value < efficiency_threshold_map[str(output)]:
+                tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Penalty"})
+            else:
+                tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Premium"})
 
-                if value > efficiency_threshold_map[str(output)]:
-                    tech_year_output_map.update({key: "emission_penalty"})
-                else:
-                    tech_year_output_map.update({key: "emission_premium"})
 
-    # nb update tech_year_output map on csv file
+    # for tech automatically eligible (es. production of biofuels or WH system fed by solar energy)
+    input_control = []
+    control = []
+    for i, elem in enumerate(efficiency_rows):
+        input = elem[0]
+        tech = elem[1]
+        year = elem[2]
+        output = elem[3]
+        input_val = str(tech) + "-" + str(year) + "-" + str(input)
+        control_val = str(tech) + "-" + str(year)
+        if output in OUTPUT_ELIGIBLE and int(year) >= START_YEAR:
+            input_control.append(input_val)
+            control.append(control_val)
+
+    # delete duplicates from control
+    control_dump = []
+    for elem in control:
+        if elem not in control_dump:
+            control_dump.append(elem)
+
+    check_map = dict()
+    for i in input_control:
+        count = 0
+        inp_split = i.split("-")
+        tech_i = inp_split[0]
+        year_i = inp_split[1]
+        input_i = inp_split[2]
+        check = str(tech_i) + "-" + str(year_i)
+        key = str(tech_i) + "-" + str(year_i) + "-" + str(input_i)
+        for elem in control_dump:
+            if check in elem:
+                count = count + 1
+                check_map.update({key: count})
+
+    for element in efficiency_rows:
+        input = element[0]
+        tech = element[1]
+        year = element[2]
+        output = element[3]
+        key = str(tech) + "-" + str(year) + "-" + str(output)
+        key_check = str(tech) + "-" + str(year) + "-" + str(input)
+        str_check = "Efficiency_Premium"
+        count_check = check_map.get(key_check)
+        if year >= START_YEAR:
+            if key not in tech_year_output_map.keys() and output in VALID_EFFICIENCY:  # not include all tech in efficiency rows
+                v = "NULL"
+                tech_year_output_map.update({key: v})
+                if output in OUTPUT_ELIGIBLE and input in INPUT_ELIGIBLE and count_check == 1:
+                    tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Premium"})
+                if output in OUTPUT_ELIGIBLE and input not in INPUT_ELIGIBLE and input not in ELC_TYPES and input != "RES_GEO" and input != "COM_GEO" and output not in UNIQUE_OUTPUT and input not in VALID_EFFICIENCY and str_check not in tech_year_output_map[key]:
+                    # penalize RES/COM system not using neither ELC nor GEO but GAS i.e. for SH/SC/WH
+                    tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Penalty"})
+                    # for ELC_DST only PV will get a premium. Not penalties for the others as they actually falls into ELC and not RES/COM
+                if output in ELIGIBLE_DEFAULT and str_check not in tech_year_output_map[key]:
+                    tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Premium"})
+            else:
+                if output in OUTPUT_ELIGIBLE and input in INPUT_ELIGIBLE and count_check == 1:
+                    tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Premium"})
+                if output in OUTPUT_ELIGIBLE and input not in INPUT_ELIGIBLE and input not in ELC_TYPES and input != "RES_GEO" and input != "COM_GEO" and output not in UNIQUE_OUTPUT and input not in VALID_EFFICIENCY and str_check not in tech_year_output_map[key]:
+                    # penalize RES/COM system not using neither ELC nor GEO but GAS i.e. for SH/SC/WH
+                    tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Penalty"})
+                if output in ELIGIBLE_DEFAULT and str_check not in tech_year_output_map[key]:
+                    # avoid multiple eff premium due to multiple input (and so rows in efficiency for the same output)
+                    tech_year_output_map.update({key: tech_year_output_map[key] + "-" + "Efficiency_Premium"})
+
+    # filter lines with only "NULL"
+    tech_year_final_map = dict()
+    for elem in tech_year_output_map.items():
+        key_old = elem[0]
+        key_split = key_old.split("-")
+        tech = key_split[0]
+        year = key_split[1]
+        output = key_split[2]
+        value_old = elem[1]
+        key = str(tech) + "-" + str(year) + "-" + str(output)
+        if value_old != "NULL":
+            tech_year_final_map.update({key: value_old})
+
+    # save the final map on a csv file
+    outFile = csv.writer(open("tech_year_output_premium.csv", "w"))
+    for key, value in tech_year_final_map.items():
+        t = key.split("-")[0]
+        y = key.split("-")[1]
+        o = key.split("-")[2]
+        p = value
+        outFile.writerow([t, y, o, p])
+
 
 except sqlite3.Error as error:
     print("Error while connecting to sqlite", error)
