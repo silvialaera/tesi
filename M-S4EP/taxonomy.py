@@ -59,8 +59,7 @@ VALID_EFFICIENCY = ["DMY_OUT", "COM_SH", "COM_WH", "COM_SC", "COM_LG", "ELC_DST"
 
 HEAT_PUMP = ["COM_SH", "COM_WH", "COM_SC",  "RES_PC_MO", "RES_PC_SN", "RES_PC_SO",
              "RES_PH_MO", "RES_PH_SN", "RES_PH_SO", "RES_PW_MO",
-             "RES_PW_SN", "RES_PW_SO", "RES_WH", "RES_SH_SO", "RES_SH_MO",
-             "RES_SH_SN", "RES_SH_MN", "RES_SC", "RES_LG"]
+             "RES_PW_SN", "RES_PW_SO", "RES_WH"]
 
 # ADD electricity commodities
 ELC_TYPES = ["AGR_ELC", "COM_ELC", "RES_ELC", "TRA_ELC", "IND_ELC", "ELC_CEN", "ELC_DST"]
@@ -97,7 +96,7 @@ EFFICIENCY_THRESHOLD = [0, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_LG_EFF, 0, H2
                         COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF,
                         COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF,
                         RES_LG_EFF,
-                        0, 0, 0, 0, 0,
+                        COM_HP_EFF, 0, 0, 0, 0,
                         0, 0, 0, 0, 0, 0, 0]
 
 START_YEAR = 2025
@@ -446,6 +445,7 @@ try:
             tech_year_output_eff_map.update({key: value})
 
     # TOS of output under investigation
+    # looking for HP with multiple output: SC, SH, WH (for them just one value for ELC consumption is needed)
     for element in tech_year_output_eff_map.items():
         key = element[0]
         value = float(element[1])
@@ -453,7 +453,7 @@ try:
         year = key.split("-")[1]
         output = key.split("-")[2]
         v = -1
-        if not output_split_values_map.__contains__(str(tech) + "-" + str(year) + "-" + str(output)):
+        if not output_split_values_map.__contains__(str(tech) + "-" + str(year) + "-" + str(output)) or output in HEAT_PUMP:
             v = 1
         else:
             v = float(output_split_values_map.get(str(tech) + "-" + str(year) + "-" + str(output)))
@@ -487,6 +487,9 @@ try:
     efficiency_threshold_map = dict()
     for i, efficiency in enumerate(VALID_EFFICIENCY):
         efficiency_threshold_map[efficiency] = EFFICIENCY_THRESHOLD[i]
+    for elem in efficiency_threshold_map.items():
+        print(elem)
+
 
     # check for tech using ELC
     for element in tech_year_output_eff_map.items():
