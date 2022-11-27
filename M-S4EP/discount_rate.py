@@ -1,5 +1,6 @@
 import sqlite3
 import csv
+from InputOutputSpecialValue import check_value
 
 # Economic parameters for WACC evaluation (Hurdle Rate) (@ 2018)
 # HR = WACC = E/E+D*CoE + D/E+D*CoD*(1-CTR) where CoE = RfR + beta_levered*MRP and CoD = EuropeanRfR + CDS
@@ -9,109 +10,144 @@ RfR = 2.54/100  # @ 2018
 MRP = 9.02/100  # @ 2018
 EuropeanRfR = 0.39/100  # @ 2018
 CDS = 1.27/100  # @ 2018
-
-# Categories of output commodities are named in accordance with the source for beta
-# Chemicals
-CH_COM_beta = 0.83  # Commodity chemicals
-CH_DIV_beta = 1.13  # Diversified chemicals (Now only methanol)
-CH_FER_beta = 1.05  # Fertilizers
-CH_GAS_beta = 0.83  # Industrial gases
-
-# Non-metallic minerals
-NM_BUI_beta = 1.09  # Building materials
-NM_CON_beta = 0.65  # Metals and glass containers
-
-# Pulp and paper
-PP_PAP_beta = 1.125  # Paper packaging + paper products
-
-# Non-ferrous metals
-NF_ALU_beta = 0.82  # Aluminium
-NF_DIV_beta = 1.18  # Diversified metals & mining (Now only Zinc)
-NF_COP_beta = 1.12  # Copper
-
-IS_beta = 1.34  # Iron and steel
-
-# Transport
-TRA_AVI_beta = 0.78  # Aviation
-TRA_NAV_beta = 0.845  # Navigation
-TRA_ROA_beta = 0.905  # Public transport and truck of goods
-TRA_CAR_beta = 1.61  # Automobile manufacturers
-TRA_2WH_beta = 0.92  # Motorcycle manufacturers
-TRA_RAIL_beta = 0.745  # Good and passenger rail
-
-beta_group = ["IND_CH_HVC", "IND_CH_BTX", "IND_CH_OLF", "IND_CH_MTH", "IND_CH_AMM", "IND_CH_CHL",
-              "IND_NM_CMT", "IND_NM_CLK", "IND_NM_LIM", "IND_NM_CRM", "IND_NM_GLS",
-              "IND_PP_PAP", "IND_NF_AMN", "IND_NF_ALU", "IND_NF_ZNC", "IND_NF_COP",
-              "IND_IS_BOF", "IND_IS_EAF", "TRA_AVI_DOM", "TRA_AVI_INT",
-              "TRA_NAV_DOM", "TRA_NAV_INT", "TRA_ROA_BUS", "TRA_ROA_LCV", "TRA_ROA_HTR", "TRA_ROA_MTR",
-              "TRA_ROA_CAR", "TRA_ROA_2WH", "TRA_RAIL_PSG", "TRA_RAIL_FRG"]
-
-beta_value = [CH_COM_beta, CH_COM_beta, CH_COM_beta, CH_DIV_beta, CH_FER_beta, CH_GAS_beta,
-              NM_BUI_beta, NM_BUI_beta, NM_BUI_beta, NM_BUI_beta, NM_CON_beta,
-              PP_PAP_beta, NF_ALU_beta, NF_ALU_beta, NF_DIV_beta, NF_COP_beta,
-              IS_beta, IS_beta, TRA_AVI_beta, TRA_AVI_beta,
-              TRA_NAV_beta, TRA_NAV_beta, TRA_ROA_beta, TRA_ROA_beta, TRA_ROA_beta, TRA_ROA_beta,
-              TRA_CAR_beta, TRA_2WH_beta, TRA_RAIL_beta, TRA_RAIL_beta]
-
-equity = [75.77, 75.77, 75.77, 69.02, 81.5, 81.5,
-          73.93, 73.93, 73.93, 73.93, 73.93,
-          75.17, 71.20, 71.20, 71.20, 71.20,
-          61.54, 61.54, 56.5, 56.5,
-          50.51, 50.51, 50.51, 50.51, 50.51, 50.51,
-          38.03, 38.03, 36.69, 36.69]
+COD_after_tax = (1-CTR)*(EuropeanRfR+CDS)
 
 # vector containing output of tech with HR taken from literature: Not issues for input
 output_default = ["COM_CK", "COM_WH", "COM_RF", "COM_SC", "COM_SH", "COM_LG",
                   "RES_CK", "RES_WH", "RES_RF_FRZ", "RES_RF_RFG", "RES_SC", "RES_SH_SO", "RES_SH_MO", "RES_SH_SN", "RES_SH_MN",
                   "RES_CW", "RES_CD", "RES_DW", "RES_LG", "RES_INS_C", "RES_INS_MO", "RES_INS_SN", "RES_INS_SO"]
 
-hr_default = [48, 48, 52, 11, 11, 26,
-              48, 48, 52, 52, 11, 11, 11, 11, 11,
-              26, 26, 26, 26, 14.75, 14.75, 14.75, 14.75]
+# vector containing output whose input needs to be checked.
+# if input not in input_check, HR evaluated by means of economic parameters
+output_check = ["TRA_ROA_LCV", "TRA_ROA_MTR", "TRA_ROA_HTR", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_AVI_DOM",
+                "TRA_AVI_INT", "TRA_NAV_DOM", "TRA_NAV_INT", "TRA_RAIL_FRG", "TRA_RAIL_PSG"]
 
-heat_pump_output = []
-heat_pump_input = []
-
-tra_elc_output = []
-tra_elc_input = []
-
-tra_h2_output = []
-tra_h2_input = []
-
-elc_output = ["ELC_CEN", "ELC_DST", "HET"]
-elc_sol_input = ["ELC_SOL"]
-
-
-# debt ratio is (1-equity/ratio) they are %
+input_check = ["TRA_ELC", "TRA_H2G", "TRA_H2L", "TRA_AMM"]
+# power sector
+# HP in COM and RES
 try:
     sqliteConnection = sqlite3.connect('db_prova.sqlite')
     cursor = sqliteConnection.cursor()
     print("Database created and Successfully Connected to SQLite")
 
-    # create a table with beta, E/D+E, D/D+E values for those categories
-    output_values = []
-    for i, elem in enumerate(beta_group):
-        output = beta_group[i]
-        equity_ratio = float(equity[i])/100
-        debt_ratio = 1-equity_ratio
-        beta = beta_value[i]
-        val = str(output) + "-" + str(equity_ratio) + "-" + str(debt_ratio) + "-" + str(beta)
-        output_values.append(val)
+    # read data of tech having beta, equity and debt ratio
+    inFile = csv.reader(open("beta_equity_debt.csv", "r"))
+    eco_rows = []
+    for row in inFile:
+        if len(row) > 0:
+            eco_rows.append(row[0])
+    output_vector = []
+    for elem in eco_rows:
+        vect = elem.split(";")
+        output_vector.append(vect)
 
-    # create a table for evaluation of HR
-    hurdle_rate_map = dict()
-    for i, elem in enumerate(output_values):
-        div = elem.split("-")
-        output = div[0]
-        equity_ratio = div[1]
-        debt_ratio = div[2]
-        beta = div[3]
+    # create a map containing the name of output with beta, D/D+E, E/D+E
+    beta_group = []
+    for elem in output_vector:
+        beta_group.append(elem[0])
+
+    output_beta_equity_debt_map = dict()
+    for elem in eco_rows:
+        vect = elem.split(";")
+        output = vect[0]
+        beta = vect[1]
+        equity_ratio = vect[2]
+        debt_ratio = vect[3]
         key = output
-        value = float(equity_ratio)*(RfR+float(beta)*MRP) + float(debt_ratio)*(1-CTR)*(EuropeanRfR+CDS)
-        if key not in hurdle_rate_map.keys():
-            hurdle_rate_map.update({key: value})
+        value = str(beta) + "-" + str(equity_ratio) + "-" + str(debt_ratio)
+        if key not in output_beta_equity_debt_map.keys():  # if key is not present yet, add it!
+            output_beta_equity_debt_map.update({key: value})
 
 
+    # read data of tech having discount rate defined in literature
+    inFile = csv.reader(open("hurdle_rate_default.csv", "r"))
+    hr_rows = []
+    for row in inFile:
+        if len(row) > 0:
+            hr_rows.append(row[0])
+
+    # create a map containing the name of output with HR by default
+    hr_default_map = dict()
+    for elem in hr_rows:
+        vect = elem.split(";")
+        output = vect[0]
+        hr = vect[1]
+        key = str(output)
+        value = float(hr)/100
+        if key not in hr_default_map.keys():  # if key is not present yet, add it!
+            hr_default_map.update({key: value})
+
+    # take from DB input-output-tech
+    query = "SELECT input_comm, tech, vintage, output_comm FROM Efficiency ORDER BY tech"
+    cursor.execute(query)
+    tech_rows_tuples = cursor.fetchall()
+
+    tech_rows = []
+    for row in tech_rows_tuples:
+        tech_rows.append(list(row))
+
+    # for tech having HR by formula and by literature (according with the type of input) we must check whether they have
+    # more than one input and whether it is contained in input_check
+    input_control = []
+    control = []
+    for i, elem in enumerate(tech_rows):
+        input = elem[0]
+        tech = elem[1]
+        year = elem[2]
+        output = elem[3]
+        input_val = str(tech) + "-" + str(year) + "-" + str(input)
+        control_val = str(tech) + "-" + str(year)
+        input_control.append(input_val)
+        control.append(control_val)
+
+    # delete duplicates from control
+    control_dump = []
+    for elem in control:
+        if elem not in control_dump:
+            control_dump.append(elem)
+
+    check_map = dict()
+    for i in input_control:
+        count = 0
+        inp_split = i.split("-")
+        tech_i = inp_split[0]
+        year_i = inp_split[1]
+        input_i = inp_split[2]
+        check = str(tech_i) + "-" + str(year_i)
+        key = str(tech_i) + "-" + str(year_i) + "-" + str(input_i)
+        for elem in control_dump:
+            if check in elem:
+                count = count + 1
+                check_map.update({key: count})
+
+    hurdle_value_map = dict()
+    for elem in tech_rows:
+        input = elem[0]
+        tech = elem[1]
+        year = elem[2]
+        output = elem[3]
+        key = str(tech) + "-" + str(year) + "-" + str(output) + "-" + str(input)
+        key_check = str(tech) + "-" + str(year) + "-" + str(input)
+        count_check = check_map.get(key_check)
+        # case 1: tech with beta, E/D+E, D/D+E by literature
+        if output in beta_group:
+            key_eco = str(output)
+            eco_parameters = output_beta_equity_debt_map.get(key_eco)
+            div = eco_parameters.split("-")
+            beta = float(div[0])
+            equity_ratio = float(div[1])/100
+            debt_ratio = float(div[2])/100
+            if count_check == 1 and input not in input_check:  # just one input not in input_check
+                COE = RfR + beta * MRP
+                value = COE * equity_ratio + debt_ratio * COD_after_tax
+            if count_check == 1 and input in input_check:  # just one input and in input_check
+                value = check_value(output, input)
+            hurdle_value_map.update({key: value})
+        # case 2: tech with HR by literature
+        if output in output_default:
+            key_hr = str(output)
+            value = hr_default_map.get(key_hr)
+            hurdle_value_map.update({key: value})
 
 
 
