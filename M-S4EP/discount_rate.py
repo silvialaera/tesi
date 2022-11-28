@@ -23,8 +23,15 @@ output_check = ["TRA_ROA_LCV", "TRA_ROA_MTR", "TRA_ROA_HTR", "TRA_ROA_BUS", "TRA
                 "TRA_AVI_INT", "TRA_NAV_DOM", "TRA_NAV_INT", "TRA_RAIL_FRG", "TRA_RAIL_PSG"]
 
 input_check = ["TRA_ELC", "TRA_H2G", "TRA_H2L", "TRA_AMM"]
+
 # power sector
-# HP in COM and RES
+output_power = ["ELC_CEN", "ELC_DST", "HET"]
+
+# H2 technologies (not CCS)
+h2_commodities = ["H2_CT", "H2_CU", "H2_DT", "COM_H2", "RES_H2", "H2_CTE", "H2_CUE", "H2_DTE"]
+elc_commodities = ["ELC_CEN", "ELC_DST", "COM_ELC", "COM_HET", "RES_ELC", "RES_HET"]
+
+BASE_YEAR = 2006
 try:
     sqliteConnection = sqlite3.connect('db_prova.sqlite')
     cursor = sqliteConnection.cursor()
@@ -86,6 +93,16 @@ try:
     for row in tech_rows_tuples:
         tech_rows.append(list(row))
 
+    # take from DB list of tech having CCS
+    query = "SELECT primary_tech from LinkedTechs"
+    cursor.execute(query)
+    linked_tech_rows_tuples = cursor.fetchall()
+
+    linked_tech_rows = []
+    for row in linked_tech_rows_tuples:
+        linked_tech_rows.append(row[0])
+
+
     # for tech having HR by formula and by literature (according with the type of input) we must check whether they have
     # more than one input and whether it is contained in input_check
     input_control = []
@@ -126,29 +143,69 @@ try:
         tech = elem[1]
         year = elem[2]
         output = elem[3]
-        key = str(tech) + "-" + str(year) + "-" + str(output) + "-" + str(input)
-        key_check = str(tech) + "-" + str(year) + "-" + str(input)
-        count_check = check_map.get(key_check)
-        # case 1: tech with beta, E/D+E, D/D+E by literature
-        if output in beta_group:
-            key_eco = str(output)
-            eco_parameters = output_beta_equity_debt_map.get(key_eco)
-            div = eco_parameters.split("-")
-            beta = float(div[0])
-            equity_ratio = float(div[1])/100
-            debt_ratio = float(div[2])/100
-            if count_check == 1 and input not in input_check:  # just one input not in input_check
-                COE = RfR + beta * MRP
-                value = COE * equity_ratio + debt_ratio * COD_after_tax
-            if count_check == 1 and input in input_check:  # just one input and in input_check
-                value = check_value(output, input)
-            hurdle_value_map.update({key: value})
-        # case 2: tech with HR by literature
-        if output in output_default:
-            key_hr = str(output)
-            value = hr_default_map.get(key_hr)
-            hurdle_value_map.update({key: value})
+        if int(year) > BASE_YEAR:
+            key = str(tech) + "-" + str(year) + "-" + str(output) + "-" + str(input)
+            key_check = str(tech) + "-" + str(year) + "-" + str(input)
+            count_check = check_map.get(key_check)
+            # case 1: tech with beta, E/D+E, D/D+E by literature
 
+            if output in beta_group and str(tech) not in linked_tech_rows:
+                key_eco = str(output)
+                eco_parameters = output_beta_equity_debt_map.get(key_eco)
+                div = eco_parameters.split("-")
+                beta = float(div[0])
+                equity_ratio = float(div[1])/100
+                debt_ratio = float(div[2])/100
+                if input not in input_check:  # just one input not in input_check
+                    COE = RfR + beta * MRP
+                    value = COE * equity_ratio + debt_ratio * COD_after_tax
+                if input in input_check:  # just one input and in input_check
+                    value = check_value(tech, output, input)
+                hurdle_value_map.update({key: value})
+            # case 2: industrial tech with CCS (their HR should be higher)
+            if output in beta_group and str(tech) in linked_tech_rows:
+                value = 15/100
+                hurdle_value_map.update({key: value})
+            # case 3: tech with HR by literature
+            if output in output_default:
+                key_hr = str(output)
+                value = hr_default_map.get(key_hr)
+                hurdle_value_map.update({key: value})
+            # case 4: tech in power sector, HR by literature depending on the source
+            if output in output_power:
+                value = check_value(tech, output, input)
+                hurdle_value_map.update({key: value})
+            # case 5: H2 technologies (not CCUS). 3 sub-cases: production, use and storage of h2_commodities
+            if (output in h2_commodities and input in elc_commodities and tech not in linked_tech_rows) or (input in h2_commodities and output in elc_commodities) or (output in h2_commodities and input in h2_commodities):
+                value = 8/100
+                hurdle_value_map.update({key: value})
+            # case 6: CO2 capture and storage tech
+            if (output == "SNK_CO2" and input in output_power) or (output == "DMY_OUT" and input == "SNK_CO2"):
+                value = 10/100
+                hurdle_value_map.update({key: value})
+
+    tech_year_output_hurdle_map = dict()
+    # deal with multiple input (es. hybrid cars or elc plants)
+    for elem in hurdle_value_map.items():
+        key = elem[0]
+        div = key.split("-")
+        tech = div[0]
+        year = div[1]
+        output = div[2]
+        input = div[3]
+        key_new = str(tech) + "-" + str(year) + "-" + str(output)
+        if key_new not in tech_year_output_hurdle_map.keys():
+            tech_year_output_hurdle_map.update({key_new: 0})
+
+    for elem in tech_year_output_hurdle_map.items():
+        key_new = elem[0]
+        count = 0
+        for ind in hurdle_value_map.items():
+            key = ind[0]
+            if key_new in key:
+                count = count + 1
+
+        tech_year_output_hurdle_map.update({key_new: count})
 
 
 
