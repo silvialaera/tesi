@@ -99,7 +99,7 @@ EFFICIENCY_THRESHOLD = [0, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_LG_EFF, 0, H2
                         COM_HP_EFF, 0, 0, 0, 0,
                         0, 0, 0, 0, 0, 0, 0]
 
-START_YEAR = 2025
+START_YEAR = 2025  # milestone year in which EU Taxonomy starts being applied
 
 try:
     sqliteConnection = sqlite3.connect('db_prova.sqlite')
@@ -367,7 +367,7 @@ try:
     for row in efficiency_rows_tuples:
         efficiency_rows.append(list(row))
 
-    # check if there are tech producing output in valid_emission not present in emission map as they do not emit (ex. EV, green H2)
+    # check if there are tech producing output in valid_emission not present in emission map as they do not emit (ex. EV, H2 vehicle, electrolyser)
     # se output = SNK_CO2 non fare niente! xk il premium a DAC l'hai già dato, e le altre tech con SNK_CO2 output sono LINKED e non hanno CostInv
 
     techFromMap = []
@@ -380,10 +380,14 @@ try:
         output = element[3]
         key = str(tech) + "-" + str(year) + "-" + str(output)
         if year >= START_YEAR:
-            if output in VALID_EMISSIONS and tech in techFromMap and output != "SNK_CO2":
+            if output in VALID_EMISSIONS and tech not in techFromMap and output != "SNK_CO2":
                 tech_year_output_map.update({key: "Emission_Premium"})
-            elif output in GREEN_H2:
+            if output in GREEN_H2:
                 tech_year_output_map.update({key: "Emission_Premium"})
+
+
+    for elem in tech_year_output_map.items():
+        print(elem)
 
     # looking for tech whose output is in valid_efficiency
     techs_efficiency = []
@@ -487,9 +491,6 @@ try:
     efficiency_threshold_map = dict()
     for i, efficiency in enumerate(VALID_EFFICIENCY):
         efficiency_threshold_map[efficiency] = EFFICIENCY_THRESHOLD[i]
-    for elem in efficiency_threshold_map.items():
-        print(elem)
-
 
     # check for tech using ELC
     for element in tech_year_output_eff_map.items():
@@ -599,6 +600,59 @@ try:
         o = key.split("-")[2]
         p = value
         outFile.writerow([t, y, o, p])
+
+    # translate premium/penalty into values
+    # FIRST ATTEMPT: premium +26 bp
+    premium = - 0.26/100
+    penalty = + 0.26/100
+    for elem in tech_year_final_map.items():
+        key = elem[0]
+        value = elem[1]
+        if value == "Emission_Premium" or value == "NULL-Efficiency_Premium" or value == "Emission_Premium-Efficiency_Premium":
+            value = float(premium)
+        elif value == "Emission_Penalty" or value == "NULL-Efficiency_Penalty" or value == "Emission_Penalty-Efficiency_Penalty" or value == "Emission_Penalty-Efficiency_Premium" or value == "Emission_Premium-Efficiency_Penalty":
+            value = float(penalty)
+        tech_year_final_map.update({key: value})
+
+    # deal with multiple output
+    tech_year_taxonomy_map = dict()
+    for elem in tech_year_final_map.items():
+        key = elem[0]
+        div = key.split("-")
+        tech = div[0]
+        year = div[1]
+        output = div[2]
+        key_new = str(tech) + "-" + str(year)
+        if key_new not in tech_year_taxonomy_map.keys():
+            tech_year_taxonomy_map.update({key_new: 0})
+
+    for elem in tech_year_taxonomy_map.items():
+        key_new = elem[0]
+        count = 0
+        for ind in tech_year_final_map.items():
+            key = ind[0]
+            if key_new in key:
+                count = count + 1
+        tech_year_taxonomy_map.update({key_new: count})
+
+    for elem in tech_year_taxonomy_map.items():
+        key_new = elem[0]
+        vect = []
+        for ind in tech_year_final_map.items():
+            key = ind[0]
+            if key_new in key:
+                val = float(tech_year_final_map.get(key))
+                vect.append(val)
+        value = min(vect)  # if one of the output has a penalty, it will prevail
+        tech_year_taxonomy_map.update({key_new: value})
+
+    # save the final map on a csv file
+    outFile = csv.writer(open("tech_year_taxonomy.csv", "w"))
+    for key, value in tech_year_taxonomy_map.items():
+        t = key.split("-")[0]
+        y = key.split("-")[1]
+        p = value
+        outFile.writerow([t, y, p])
 
 
 except sqlite3.Error as error:

@@ -31,7 +31,8 @@ output_power = ["ELC_CEN", "ELC_DST", "HET"]
 h2_commodities = ["H2_CT", "H2_CU", "H2_DT", "COM_H2", "RES_H2", "H2_CTE", "H2_CUE", "H2_DTE"]
 elc_commodities = ["ELC_CEN", "ELC_DST", "COM_ELC", "COM_HET", "RES_ELC", "RES_HET"]
 
-BASE_YEAR = 2006
+BASE_YEAR = 2006  # base year of TEMOA. For 2006 no CostInvest needed
+START_YEAR = 2025  # milestone year in which EU Taxonomy starts being applied
 try:
     sqliteConnection = sqlite3.connect('db_prova.sqlite')
     cursor = sqliteConnection.cursor()
@@ -102,41 +103,6 @@ try:
     for row in linked_tech_rows_tuples:
         linked_tech_rows.append(row[0])
 
-
-    # for tech having HR by formula and by literature (according with the type of input) we must check whether they have
-    # more than one input and whether it is contained in input_check
-    input_control = []
-    control = []
-    for i, elem in enumerate(tech_rows):
-        input = elem[0]
-        tech = elem[1]
-        year = elem[2]
-        output = elem[3]
-        input_val = str(tech) + "-" + str(year) + "-" + str(input)
-        control_val = str(tech) + "-" + str(year)
-        input_control.append(input_val)
-        control.append(control_val)
-
-    # delete duplicates from control
-    control_dump = []
-    for elem in control:
-        if elem not in control_dump:
-            control_dump.append(elem)
-
-    check_map = dict()
-    for i in input_control:
-        count = 0
-        inp_split = i.split("-")
-        tech_i = inp_split[0]
-        year_i = inp_split[1]
-        input_i = inp_split[2]
-        check = str(tech_i) + "-" + str(year_i)
-        key = str(tech_i) + "-" + str(year_i) + "-" + str(input_i)
-        for elem in control_dump:
-            if check in elem:
-                count = count + 1
-                check_map.update({key: count})
-
     hurdle_value_map = dict()
     for elem in tech_rows:
         input = elem[0]
@@ -146,7 +112,6 @@ try:
         if int(year) > BASE_YEAR:
             key = str(tech) + "-" + str(year) + "-" + str(output) + "-" + str(input)
             key_check = str(tech) + "-" + str(year) + "-" + str(input)
-            count_check = check_map.get(key_check)
             # case 1: tech with beta, E/D+E, D/D+E by literature
 
             if output in beta_group and str(tech) not in linked_tech_rows:
@@ -179,13 +144,16 @@ try:
             if (output in h2_commodities and input in elc_commodities and tech not in linked_tech_rows) or (input in h2_commodities and output in elc_commodities) or (output in h2_commodities and input in h2_commodities):
                 value = 8/100
                 hurdle_value_map.update({key: value})
+            if output in h2_commodities and tech in linked_tech_rows:  # H2 production and use tech with CCS
+                value = 10/100
+                hurdle_value_map.update({key: value})
             # case 6: CO2 capture and storage tech
             if (output == "SNK_CO2" and input in output_power) or (output == "DMY_OUT" and input == "SNK_CO2"):
                 value = 10/100
                 hurdle_value_map.update({key: value})
 
-    tech_year_output_hurdle_map = dict()
     # deal with multiple input (es. hybrid cars or elc plants)
+    tech_year_output_hurdle_map = dict()
     for elem in hurdle_value_map.items():
         key = elem[0]
         div = key.split("-")
@@ -204,10 +172,110 @@ try:
             key = ind[0]
             if key_new in key:
                 count = count + 1
-
         tech_year_output_hurdle_map.update({key_new: count})
 
+    for elem in tech_year_output_hurdle_map.items():
+        key_new = elem[0]
+        vect = []
+        for ind in hurdle_value_map.items():
+            key = ind[0]
+            if key_new in key:
+                vect.append(hurdle_value_map.get(key))
+        value = max(vect)
+        tech_year_output_hurdle_map.update({key_new: value})
 
+    # delete non end-use technologies
+    tech_hurdle_map = dict()
+    for elem in tech_year_output_hurdle_map.items():
+        key = elem[0]
+        div = key.split("-")
+        tech = div[0]
+        year = div[1]
+        output = div[2]
+        str_ft = "_FT_"  # fuel tech
+        str_dmy = "_DMY_"  # dummy tech
+        if str(str_ft) not in tech and str(str_dmy) not in tech:
+            key_new = str(tech) + "-" + str(year) + "-" + str(output)
+            value = tech_year_output_hurdle_map.get(key)
+            if key_new not in tech_hurdle_map.keys():  # if key is not present yet, add it!
+                tech_hurdle_map.update({key: value})
+
+    # deal with multiple output (es. CHP plants or HP, especially for HP plants as HRs related to WH,SC,SH differ)
+    tech_year_hurdle_map = dict()
+    for elem in tech_year_output_hurdle_map.items():
+        key = elem[0]
+        div = key.split("-")
+        tech = div[0]
+        year = div[1]
+        output = div[2]
+        key_new = str(tech) + "-" + str(year)
+        if key_new not in tech_year_hurdle_map.keys():
+            tech_year_hurdle_map.update({key_new: 0})
+
+    for elem in tech_year_hurdle_map.items():
+        key_new = elem[0]
+        count = 0
+        for ind in tech_year_output_hurdle_map.items():
+            key = ind[0]
+            if key_new in key:
+                count = count + 1
+        tech_year_hurdle_map.update({key_new: count})
+
+    for elem in tech_year_hurdle_map.items():
+        key_new = elem[0]
+        vect = []
+        for ind in tech_year_output_hurdle_map.items():
+            key = ind[0]
+            if key_new in key:
+                vect.append(tech_year_output_hurdle_map.get(key))
+        value = max(vect)
+        tech_year_hurdle_map.update({key_new: value})
+
+    # save it on a csv file
+    outFile = csv.writer(open("tech_year_hurdle_rate.csv", "w"))
+    for key, value in tech_year_hurdle_map.items():
+        t = key.split("-")[0]
+        y = key.split("-")[1]
+        outFile.writerow([t, y, value])
+
+    # import csv resulting from taxonomy application
+    inFile = csv.reader(open("tech_year_taxonomy.csv", "r"))
+    taxonomy_rows = []
+    for row in inFile:
+        if len(row) > 0:
+            taxonomy_rows.append(row)
+
+    taxonomy_map = dict()
+    for elem in taxonomy_rows:
+        tech = elem[0]
+        year = elem[1]
+        delta = elem[2]
+        key = str(tech) + "-" + str(year)
+        value = delta
+        if key not in taxonomy_map.keys():
+            taxonomy_map.update({key: value})
+
+    # merging the two maps
+    for elem in tech_year_hurdle_map.items():
+        key = elem[0]
+        div = key.split("-")
+        tech = div[0]
+        year = div[1]
+        if int(year) >= START_YEAR:
+            for ind in taxonomy_map.items():
+                key_tax = ind[0]
+                if key == key_tax:
+                    delta = ind[1]
+                    val = tech_year_hurdle_map.get(key)
+                    new_value = float(0 if val is None else val) + float(delta)
+                    tech_year_hurdle_map.update({key: new_value})
+
+    # save it on a csv file
+    outFile = csv.writer(open("hurdle_taxonomy_applied.csv", "w"))
+    for key, value in tech_year_hurdle_map.items():
+        t = key.split("-")[0]
+        y = key.split("-")[1]
+        outFile.writerow([t, y, value])
 
 except sqlite3.Error as error:
     print("Error while connecting to sqlite", error)
