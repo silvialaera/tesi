@@ -277,5 +277,7 @@ try:
         y = key.split("-")[1]
         outFile.writerow([t, y, value])
 
+    # update DiscountRate table on .sqlite file
+
 except sqlite3.Error as error:
     print("Error while connecting to sqlite", error)

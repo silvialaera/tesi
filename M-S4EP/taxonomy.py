@@ -1,6 +1,6 @@
 import sqlite3
 import csv
-
+from PowerSectorTaxonomy import check_power
 
 # normalize emissions in [tCO2eq/act]
 def normalise_emission_factor_unit(val, unit):
@@ -16,7 +16,11 @@ def normalise_emission_factor_unit(val, unit):
 VALID_EMISSIONS = ["SNK_CO2", "H2_DT", "H2_CT", "H2_CU", "IND_NM_CLK", "IND_NM_CMT",
                    "IND_NF_ALU", "IND_IS_BOF", "IND_IS_EAF", "IND_CH_HVC", "IND_CH_BTX", "IND_CH_MTH",
                    "IND_CH_AMM", "TRA_RAIL_PSG", "TRA_RAIL_FRG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV",
-                   "TRA_ROA_2WH", "TRA_ROA_HTR", "TRA_ROA_MTR"]
+                   "TRA_ROA_2WH", "TRA_ROA_HTR", "TRA_ROA_MTR",
+                   "ELC_CEN", "ELC_DST", "HET"]
+
+# diversify the power sector, as it needs the input to be controlled
+POWER_OUTPUT = ["ELC_CEN", "ELC_DST", "HET"]
 
 # output having TSC in gCO2 and not gCO2 equivalent (no GWP evaluation is needed). include also DAC (SNK_CO2)
 CO2_OUTPUT = ["SNK_CO2", "IND_CH_AMM", "TRA_ROA_CAR", "TRA_ROA_LCV", "TRA_ROA_2WH", "TRA_ROA_HTR", "TRA_ROA_MTR"]
@@ -44,7 +48,8 @@ TR_EM = 118.73 * 10   # (per TRA_ROA_HTR, TRA_ROA_MTR * 0.5). 10 tons in average
 EMISSION_THRESHOLD = [0, H2_EM, H2_EM, H2_EM, CLK_EM, CMT_EM,
                       AL_EM, BOF_EM, EAF_EM, HVC_EM, BTX_EM, MTH_EM,
                       AMM_EM, TRA_EM * 1.7, RAIL_FRG_EM * 0.5, TRA_EM * 1.7, TRA_EM, TRA_EM * 1.7,
-                      0, TR_EM * 0.5, TR_EM * 0.5]
+                      0, TR_EM * 0.5, TR_EM * 0.5,
+                      0, 0, 0]
 
 CHANGING_THRESHOLD_OUTPUT = ["TRA_RAIL_PSG", "TRA_ROA_BUS", "TRA_ROA_CAR", "TRA_ROA_LCV"]
 
@@ -371,23 +376,68 @@ try:
     # se output = SNK_CO2 non fare niente! xk il premium a DAC l'hai già dato, e le altre tech con SNK_CO2 output sono LINKED e non hanno CostInv
 
     techFromMap = []
-    for element in tech_year_output_map:
-        techFromMap.append(element[0].split("-")[0])
+    for element in tech_year_output_map.items():
+        key = element[0]
+        tech = key.split("-")[0]
+        techFromMap.append(tech)
+
+    dummy_chp = []
+    for elem in efficiency_rows:
+        tech = elem[1]
+        if tech == "ELC_CHP_BGS_COG_E":
+            dummy_chp.append(elem)
+
+    dummy_map = dict()
+    for elem in output_split_values_map.items():
+        key = elem[0]
+        tech = key.split("-")[0]
+        year = key.split("-")[1]
+        output = key.split("-")[2]
+        value = elem[1]
+        if tech == "ELC_CHP_BGS_COG_E":
+            key_dummy = str(tech) + "-" + str(year) + "-" + str(output)
+            if key_dummy not in dummy_map.keys():
+                dummy_map.update({key_dummy: value})
 
     for element in efficiency_rows:
+        input = element[0]
         tech = element[1]
         year = element[2]
         output = element[3]
         key = str(tech) + "-" + str(year) + "-" + str(output)
         if year >= START_YEAR:
-            if output in VALID_EMISSIONS and tech not in techFromMap and output != "SNK_CO2":
-                tech_year_output_map.update({key: "Emission_Premium"})
-            if output in GREEN_H2:
-                tech_year_output_map.update({key: "Emission_Premium"})
+            if output in VALID_EMISSIONS and tech not in techFromMap and output != "SNK_CO2" and output not in POWER_OUTPUT:  # EV
+                if key not in tech_year_output_map.keys():
+                    tech_year_output_map.update({key: "Emission_Premium"})
+            if output in GREEN_H2 and tech not in techFromMap and output != "SNK_CO2":  # electrolysers
+                if key not in tech_year_output_map.keys():
+                    tech_year_output_map.update({key: "Emission_Premium"})
+            if output in POWER_OUTPUT and tech in techFromMap:  # power tech emitting
+                # check whether it is a CHP plant or not. If so, limit is
+                count = 0
+                key_dummy = str(tech) + "-" + str(year)
+                #for ind in dummy_map.items():
+                for ind in output_split_values_map.items():
+                    key_out = ind[0]
+                    if key_dummy in key_out:
+                        count = count + 1
+                tot_emission = tech_year_output_value_map.get(key)
+                result = check_power(count, tot_emission, input, year, output)
+                if result == 1:  # ensure that mix tech (bio+coal) does not have premium
+                    tech_year_output_map.update({key: "Emission_Premium"})
+                elif result == 0:
+                    tech_year_output_map.update({key: "Emission_Penalty"})
+            if output in POWER_OUTPUT and tech not in techFromMap:  # assign by default premium for green tech
+                if key not in tech_year_output_map.keys():
+                    tech_year_output_map.update({key: "Emission_Premium"})
 
-
-    for elem in tech_year_output_map.items():
-        print(elem)
+    # delete non Taxonomy mentioned techs: fuel tech (for import) and also RES_CHP and COM_CHP
+    outFile = csv.writer(open("trial_taxonomy.csv", "w"))
+    for key, value in tech_year_output_map.items():
+        t = key.split("-")[0]
+        y = key.split("-")[1]
+        o = key.split("-")[2]
+        outFile.writerow([t, y, o, value])
 
     # looking for tech whose output is in valid_efficiency
     techs_efficiency = []
