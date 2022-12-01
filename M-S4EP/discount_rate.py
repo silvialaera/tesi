@@ -34,7 +34,7 @@ elc_commodities = ["ELC_CEN", "ELC_DST", "COM_ELC", "COM_HET", "RES_ELC", "RES_H
 BASE_YEAR = 2006  # base year of TEMOA. For 2006 no CostInvest needed
 START_YEAR = 2025  # milestone year in which EU Taxonomy starts being applied
 try:
-    sqliteConnection = sqlite3.connect('db_prova.sqlite')
+    sqliteConnection = sqlite3.connect('prova.sqlite')
     cursor = sqliteConnection.cursor()
     print("Database created and Successfully Connected to SQLite")
 
@@ -109,48 +109,47 @@ try:
         tech = elem[1]
         year = elem[2]
         output = elem[3]
-        if int(year) > BASE_YEAR:
-            key = str(tech) + "-" + str(year) + "-" + str(output) + "-" + str(input)
-            key_check = str(tech) + "-" + str(year) + "-" + str(input)
-            # case 1: tech with beta, E/D+E, D/D+E by literature
+        key = str(tech) + "-" + str(year) + "-" + str(output) + "-" + str(input)
+        key_check = str(tech) + "-" + str(year) + "-" + str(input)
+        # case 1: tech with beta, E/D+E, D/D+E by literature
 
-            if output in beta_group and str(tech) not in linked_tech_rows:
-                key_eco = str(output)
-                eco_parameters = output_beta_equity_debt_map.get(key_eco)
-                div = eco_parameters.split("-")
-                beta = float(div[0])
-                equity_ratio = float(div[1])/100
-                debt_ratio = float(div[2])/100
-                if input not in input_check:  # just one input not in input_check
-                    COE = RfR + beta * MRP
-                    value = COE * equity_ratio + debt_ratio * COD_after_tax
-                if input in input_check:  # just one input and in input_check
-                    value = check_value(tech, output, input)
-                hurdle_value_map.update({key: value})
-            # case 2: industrial tech with CCS (their HR should be higher)
-            if output in beta_group and str(tech) in linked_tech_rows:
-                value = 15/100
-                hurdle_value_map.update({key: value})
-            # case 3: tech with HR by literature
-            if output in output_default:
-                key_hr = str(output)
-                value = hr_default_map.get(key_hr)
-                hurdle_value_map.update({key: value})
-            # case 4: tech in power sector, HR by literature depending on the source
-            if output in output_power:
+        if output in beta_group and str(tech) not in linked_tech_rows:
+            key_eco = str(output)
+            eco_parameters = output_beta_equity_debt_map.get(key_eco)
+            div = eco_parameters.split("-")
+            beta = float(div[0])
+            equity_ratio = float(div[1])/100
+            debt_ratio = float(div[2])/100
+            if input not in input_check:  # just one input not in input_check
+                COE = RfR + beta * MRP
+                value = COE * equity_ratio + debt_ratio * COD_after_tax
+            if input in input_check:  # just one input and in input_check
                 value = check_value(tech, output, input)
-                hurdle_value_map.update({key: value})
-            # case 5: H2 technologies (not CCUS). 3 sub-cases: production, use and storage of h2_commodities
-            if (output in h2_commodities and input in elc_commodities and tech not in linked_tech_rows) or (input in h2_commodities and output in elc_commodities) or (output in h2_commodities and input in h2_commodities):
-                value = 8/100
-                hurdle_value_map.update({key: value})
-            if output in h2_commodities and tech in linked_tech_rows:  # H2 production and use tech with CCS
-                value = 10/100
-                hurdle_value_map.update({key: value})
-            # case 6: CO2 capture and storage tech
-            if (output == "SNK_CO2" and input in output_power) or (output == "DMY_OUT" and input == "SNK_CO2"):
-                value = 10/100
-                hurdle_value_map.update({key: value})
+            hurdle_value_map.update({key: value})
+        # case 2: industrial tech with CCS (their HR should be higher)
+        if output in beta_group and str(tech) in linked_tech_rows:
+            value = 15/100
+            hurdle_value_map.update({key: value})
+        # case 3: tech with HR by literature
+        if output in output_default:
+            key_hr = str(output)
+            value = hr_default_map.get(key_hr)
+            hurdle_value_map.update({key: value})
+        # case 4: tech in power sector, HR by literature depending on the source
+        if output in output_power:
+            value = check_value(tech, output, input)
+            hurdle_value_map.update({key: value})
+        # case 5: H2 technologies (not CCUS). 3 sub-cases: production, use and storage of h2_commodities
+        if (output in h2_commodities and input in elc_commodities and tech not in linked_tech_rows) or (input in h2_commodities and output in elc_commodities) or (output in h2_commodities and input in h2_commodities):
+            value = 8/100
+            hurdle_value_map.update({key: value})
+        if output in h2_commodities and tech in linked_tech_rows:  # H2 production and use tech with CCS
+            value = 10/100
+            hurdle_value_map.update({key: value})
+        # case 6: CO2 capture and storage tech
+        if (output == "SNK_CO2" and input in output_power) or (output == "DMY_OUT" and input == "SNK_CO2"):
+            value = 10/100
+            hurdle_value_map.update({key: value})
 
     # deal with multiple input (es. hybrid cars or elc plants)
     tech_year_output_hurdle_map = dict()
@@ -270,14 +269,63 @@ try:
                     new_value = float(0 if val is None else val) + float(delta)
                     tech_year_hurdle_map.update({key: new_value})
 
+    # filter: delete all techs not being present in CostInvest table
+    query = "SELECT tech FROM CostInvest ORDER by tech"
+    cursor.execute(query)
+    invest_tuples = cursor.fetchall()
+
+    invest_rows = []
+    for row in invest_tuples:
+        invest_rows.append(list(row))
+
+    for elem in invest_rows:
+        print(elem)
+
+    final_map = dict()
+    for elem in tech_year_hurdle_map.items():
+        key = elem[0]
+        tech = key.split("-")[0]
+        year = key.split("-")[1]
+        value = elem[1]
+        count = 0
+        for i, ind in enumerate(invest_rows):
+            if tech == invest_rows[i]:
+                count = count + 1
+        if count != 0:
+            key = str(tech) + "-" + str(year)
+            final_map.update({key: value})
+
     # save it on a csv file
     outFile = csv.writer(open("hurdle_taxonomy_applied.csv", "w"))
-    for key, value in tech_year_hurdle_map.items():
+    for key, value in final_map.items():
         t = key.split("-")[0]
         y = key.split("-")[1]
         outFile.writerow([t, y, value])
 
+    regions = []
+    tech_rate_notes = []
+    for elem in enumerate(final_map.items()):
+        regions.append('IT')
+        tech_rate_notes.append('')
+
     # update DiscountRate table on .sqlite file
+    count = 0
+    for elem in final_map.items():
+        count = count + 1
+        key = elem[0]
+        tech_tax = str(key.split("-")[0])
+        year_tax = int(key.split("-")[1])
+        value = float(0 if elem[1] is None else elem[1])
+        update_query = "INSERT INTO DiscountRate (regions, tech, vintage, tech_rate, tech_rate_notes) VALUES (?, ?, ?, ?, ?)"
+        if count == len(final_map):
+            regions_dummy = 'IT'
+            notes_dummy = ''
+            val = (regions_dummy, tech_tax, year_tax, value, notes_dummy)
+        else:
+            val = (regions[count], tech_tax, year_tax, value, tech_rate_notes[count])
+        cursor.execute(update_query, val)
+        sqliteConnection.commit()
+    cursor.close()
 
 except sqlite3.Error as error:
     print("Error while connecting to sqlite", error)

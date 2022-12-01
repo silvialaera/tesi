@@ -46,7 +46,6 @@
   </component>
   <component name="DBNavigator.Project.FileConnectionMappingManager">
     <mapping file-url="file://$PROJECT_DIR$" connection-id="virtual-sqlite-connection" session-id="MAIN" current-schema="" />
-    <mapping file-url="file://$PROJECT_DIR$/latest_TEMOA-Italy.sql" connection-id="a1729469-0d00-47bd-9e7f-3b90ca3ab507" session-id="MAIN" current-schema="" />
   </component>
   <component name="DBNavigator.Project.MethodExecutionManager">
     <method-browser />
