@@ -34,7 +34,7 @@ elc_commodities = ["ELC_CEN", "ELC_DST", "COM_ELC", "COM_HET", "RES_ELC", "RES_H
 BASE_YEAR = 2006  # base year of TEMOA. For 2006 no CostInvest needed
 START_YEAR = 2025  # milestone year in which EU Taxonomy starts being applied
 try:
-    sqliteConnection = sqlite3.connect('prova.sqlite')
+    sqliteConnection = sqlite3.connect('TEMOA_Italy.sqlite')
     cursor = sqliteConnection.cursor()
     print("Database created and Successfully Connected to SQLite")
 
@@ -270,7 +270,7 @@ try:
                     tech_year_hurdle_map.update({key: new_value})
 
     # filter: delete all techs not being present in CostInvest table
-    query = "SELECT tech FROM CostInvest ORDER by tech"
+    query = "SELECT tech, vintage FROM CostInvest ORDER by tech"
     cursor.execute(query)
     invest_tuples = cursor.fetchall()
 
@@ -278,8 +278,14 @@ try:
     for row in invest_tuples:
         invest_rows.append(list(row))
 
+    # invest map
+    cost_invest_map = dict()
     for elem in invest_rows:
-        print(elem)
+        tech = elem[0]
+        year = elem[1]
+        key = str(tech) + "-" + str(year)
+        if key not in cost_invest_map.keys():
+            cost_invest_map.update({key: 0.0})
 
     final_map = dict()
     for elem in tech_year_hurdle_map.items():
@@ -287,13 +293,12 @@ try:
         tech = key.split("-")[0]
         year = key.split("-")[1]
         value = elem[1]
-        count = 0
-        for i, ind in enumerate(invest_rows):
-            if tech == invest_rows[i]:
-                count = count + 1
-        if count != 0:
-            key = str(tech) + "-" + str(year)
-            final_map.update({key: value})
+        for ind in cost_invest_map.items():
+            key_cost = ind[0]
+            tech_cost = key_cost.split("-")[0]
+            year_cost = key_cost.split("-")[1]
+            if tech == tech_cost and year == year_cost:
+                final_map.update({key_cost: value})
 
     # save it on a csv file
     outFile = csv.writer(open("hurdle_taxonomy_applied.csv", "w"))

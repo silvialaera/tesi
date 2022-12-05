@@ -107,7 +107,7 @@ EFFICIENCY_THRESHOLD = [0, COM_HP_EFF, COM_HP_EFF, COM_HP_EFF, COM_LG_EFF, 0, H2
 START_YEAR = 2025  # milestone year in which EU Taxonomy starts being applied
 
 try:
-    sqliteConnection = sqlite3.connect('prova.sqlite')
+    sqliteConnection = sqlite3.connect('TEMOA_Italy.sqlite')
     cursor = sqliteConnection.cursor()
     print("Database created and Successfully Connected to SQLite")
 
